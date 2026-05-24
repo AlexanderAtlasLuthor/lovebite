@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Love Bite",
+    "slug": "lovebite",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "lovebite",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lovebite.app"
+    },
+    "android": {
+      "package": "com.lovebite.app",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
