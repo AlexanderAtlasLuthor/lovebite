@@ -7,6 +7,7 @@ import Wheel from '../components/Wheel';
 import { PrimaryButton, SecondaryButton } from '../components/Buttons';
 import { useReviews } from '../state/ReviewsContext';
 import { getScore, scoreColor, scoreLabel } from '../lib/scoring';
+import { SEGMENT_COLORS } from '../data/categories';
 import { colors, fonts } from '../theme';
 
 export default function WheelScreen({ navigation }) {
@@ -75,7 +76,39 @@ export default function WheelScreen({ navigation }) {
             }}
           />
 
-          <View style={{ marginTop: 24 }}>
+          <View style={styles.legend}>
+            <Text style={styles.legendTitle}>Mapa de la ruleta</Text>
+            <View style={styles.legendGrid}>
+              {eligible.map((item, index) => {
+                const isWinner = winner?.id === item.id && !spinning;
+                return (
+                  <View
+                    key={item.id}
+                    style={[styles.legendItem, isWinner && styles.legendItemWinner]}
+                  >
+                    <View
+                      style={[
+                        styles.legendNumber,
+                        { backgroundColor: SEGMENT_COLORS[index % SEGMENT_COLORS.length] },
+                      ]}
+                    >
+                      <Text style={styles.legendNumberText}>{index + 1}</Text>
+                    </View>
+                    <View style={styles.legendCopy}>
+                      <Text style={styles.legendName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.legendScore}>
+                        {getScore(item).toFixed(1)}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={{ marginTop: 20 }}>
             <PrimaryButton icon={RotateCw} onPress={spin} disabled={spinning}>
               {spinning ? 'Girando…' : winner ? 'Girar de nuevo' : 'Girar la ruleta'}
             </PrimaryButton>
@@ -172,6 +205,74 @@ const styles = StyleSheet.create({
     color: colors.ash,
     textAlign: 'center',
     paddingHorizontal: 20,
+  },
+  legend: {
+    width: '100%',
+    maxWidth: 430,
+    marginTop: 18,
+  },
+  legendTitle: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    color: colors.ash,
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  legendGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  legendItem: {
+    width: '48%',
+    minWidth: 150,
+    maxWidth: 205,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 9,
+  },
+  legendItemWinner: {
+    backgroundColor: colors.white,
+    borderColor: colors.cherry,
+  },
+  legendNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  legendNumberText: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    color: colors.white,
+  },
+  legendCopy: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  legendName: {
+    flex: 1,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  legendScore: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    color: colors.ash,
   },
   result: {
     marginTop: 28,

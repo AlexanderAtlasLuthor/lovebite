@@ -15,4 +15,17 @@ export const PRO_CATEGORIES = [
   { key: 'consistency', label: 'Consistencia', emoji: '🎯', desc: 'Ejecución pareja a lo largo de la visita', weight: 0.10 },
 ];
 
-export const SEGMENT_COLORS = ['#C81E3A', '#E27D8C', '#8E0E26', '#B8862E', '#5C0A1F'];
+export const SEGMENT_COLORS = [
+  '#C81E3A',
+  '#275DAD',
+  '#B8862E',
+  '#28766F',
+  '#8E0E26',
+  '#D96C45',
+  '#5C0A1F',
+  '#5F5AA2',
+  '#E27D8C',
+  '#3E7C3F',
+  '#8B5E34',
+  '#2F5368',
+];
