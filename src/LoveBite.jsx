@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Heart, Plus, Search, X, Trash2, Star, MapPin, Calendar, ChevronDown, Award } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Heart, Plus, Search, X, Trash2, Star, MapPin, Calendar, ChevronDown, Award, Dices, RotateCw, Sparkles } from 'lucide-react';
 
 const CATEGORIES = [
   { key: 'cost', label: 'Costo', emoji: '💰', desc: 'Relación calidad-precio' },
@@ -8,6 +8,18 @@ const CATEGORIES = [
   { key: 'food', label: 'Comida', emoji: '🍝', desc: 'Sabor y calidad' },
   { key: 'speed', label: 'Rapidez', emoji: '⚡', desc: 'Tiempo de espera' },
 ];
+
+// Método profesional inspirado en Michelin / NYT / Zagat.
+// Cada categoría tiene un peso — el puntaje final es un promedio ponderado.
+const PRO_CATEGORIES = [
+  { key: 'food', label: 'Cocina', emoji: '🍽️', desc: 'Ingredientes, técnica, armonía y creatividad', weight: 0.40 },
+  { key: 'service', label: 'Servicio', emoji: '🛎️', desc: 'Atención, conocimiento, ritmo de la mesa', weight: 0.20 },
+  { key: 'ambience', label: 'Ambiente', emoji: '🕯️', desc: 'Atmósfera, decoración, confort acústico', weight: 0.15 },
+  { key: 'value', label: 'Valor', emoji: '💎', desc: 'Relación calidad-precio percibida', weight: 0.15 },
+  { key: 'consistency', label: 'Consistencia', emoji: '🎯', desc: 'Ejecución pareja a lo largo de la visita', weight: 0.10 },
+];
+
+const SEGMENT_COLORS = ['#C81E3A', '#E27D8C', '#8E0E26', '#B8862E', '#5C0A1F'];
 
 // Distribuye un score promedio en las 5 categorías con una pequeña variación natural
 const distributeScore = (avg, variations = [0, 0, 0, 0, 0]) => {
@@ -74,6 +86,14 @@ const avg = (r) => {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 };
 
+const proWeightedAvg = (ratings) =>
+  PRO_CATEGORIES.reduce((sum, c) => sum + (ratings[c.key] ?? 0) * c.weight, 0);
+
+const getScore = (review) =>
+  review?.method === 'professional' ? proWeightedAvg(review.ratings) : avg(review.ratings);
+
+const getCategories = (method) => (method === 'professional' ? PRO_CATEGORIES : CATEGORIES);
+
 const scoreColor = (s) => {
   if (s >= 9) return 'var(--gold)';
   if (s >= 7.5) return 'var(--cherry)';
@@ -90,9 +110,18 @@ const scoreLabel = (s) => {
   return 'Pasable';
 };
 
+// Escala estilo NYT/Pete Wells para el modo profesional: 0–4 estrellas.
+const proStarRating = (s) => {
+  if (s >= 9.5) return { stars: 4, label: 'Extraordinario' };
+  if (s >= 8) return { stars: 3, label: 'Excelente' };
+  if (s >= 6.5) return { stars: 2, label: 'Muy bueno' };
+  if (s >= 5) return { stars: 1, label: 'Satisfactorio' };
+  return { stars: 0, label: 'Pobre' };
+};
+
 export default function LoveBite() {
   const [reviews, setReviews] = useState(SEED);
-  const [view, setView] = useState('list'); // list | detail | new
+  const [view, setView] = useState('list'); // list | detail | new | wheel
   const [selected, setSelected] = useState(null);
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState('recent');
@@ -102,14 +131,14 @@ export default function LoveBite() {
       `${r.name} ${r.location} ${r.notes}`.toLowerCase().includes(query.toLowerCase())
     )
     .sort((a, b) => {
-      if (sortBy === 'rating') return avg(b.ratings) - avg(a.ratings);
+      if (sortBy === 'rating') return getScore(b) - getScore(a);
       return new Date(b.date) - new Date(a.date);
     });
 
   const stats = {
     total: reviews.length,
-    avgScore: reviews.length ? reviews.reduce((s, r) => s + avg(r.ratings), 0) / reviews.length : 0,
-    best: reviews.length ? reviews.reduce((b, r) => (avg(r.ratings) > avg(b.ratings) ? r : b)) : null,
+    avgScore: reviews.length ? reviews.reduce((s, r) => s + getScore(r), 0) / reviews.length : 0,
+    best: reviews.length ? reviews.reduce((b, r) => (getScore(r) > getScore(b) ? r : b)) : null,
   };
 
   return (
@@ -141,10 +170,16 @@ export default function LoveBite() {
           </div>
 
           {view === 'list' && (
-            <button className="btn-primary" onClick={() => setView('new')}>
-              <Plus size={18} strokeWidth={2.5} />
-              Nueva reseña
-            </button>
+            <div className="hero-actions">
+              <button className="btn-ghost" onClick={() => setView('wheel')} title="Girar la ruleta">
+                <Dices size={18} strokeWidth={2.2} />
+                Ruleta
+              </button>
+              <button className="btn-primary" onClick={() => setView('new')}>
+                <Plus size={18} strokeWidth={2.5} />
+                Nueva reseña
+              </button>
+            </div>
           )}
         </div>
 
@@ -166,7 +201,7 @@ export default function LoveBite() {
               </div>
               <div className="stat-label">
                 <Award size={11} style={{ display: 'inline', marginRight: 4 }} />
-                Favorito ({avg(stats.best.ratings).toFixed(1)})
+                Favorito ({getScore(stats.best).toFixed(1)})
               </div>
             </div>
           </div>
@@ -205,6 +240,17 @@ export default function LoveBite() {
             onSave={(r) => {
               setReviews([{ ...r, id: Date.now() }, ...reviews]);
               setView('list');
+            }}
+          />
+        )}
+
+        {view === 'wheel' && (
+          <WheelView
+            reviews={reviews}
+            onBack={() => setView('list')}
+            onSelect={(r) => {
+              setSelected(r);
+              setView('detail');
             }}
           />
         )}
@@ -255,7 +301,9 @@ function ListView({ reviews, query, setQuery, sortBy, setSortBy, onSelect }) {
       ) : (
         <div className="cards">
           {reviews.map((r, i) => {
-            const score = avg(r.ratings);
+            const score = getScore(r);
+            const cats = getCategories(r.method);
+            const isPro = r.method === 'professional';
             return (
               <article
                 key={r.id}
@@ -266,6 +314,11 @@ function ListView({ reviews, query, setQuery, sortBy, setSortBy, onSelect }) {
                 <div className="card-score" style={{ color: scoreColor(score) }}>
                   <div className="card-score-num">{score.toFixed(1)}</div>
                   <div className="card-score-label">{scoreLabel(score)}</div>
+                  {isPro && (
+                    <div className="card-pro-badge" title="Reseña profesional">
+                      <Sparkles size={10} /> Pro
+                    </div>
+                  )}
                 </div>
                 <div className="card-body">
                   <h3 className="card-name">{r.name}</h3>
@@ -275,7 +328,7 @@ function ListView({ reviews, query, setQuery, sortBy, setSortBy, onSelect }) {
                   </div>
                   {r.notes && <p className="card-notes">{r.notes}</p>}
                   <div className="card-mini-cats">
-                    {CATEGORIES.map((c) => (
+                    {cats.map((c) => (
                       <div key={c.key} className="mini-cat" title={c.label}>
                         <span>{c.emoji}</span>
                         <span className="mini-cat-val">{r.ratings[c.key]}</span>
@@ -293,7 +346,10 @@ function ListView({ reviews, query, setQuery, sortBy, setSortBy, onSelect }) {
 }
 
 function DetailView({ review, onBack, onDelete }) {
-  const score = avg(review.ratings);
+  const score = getScore(review);
+  const cats = getCategories(review.method);
+  const isPro = review.method === 'professional';
+  const stars = isPro ? proStarRating(score) : null;
   return (
     <div className="detail">
       <button className="back-btn" onClick={onBack}>← Volver</button>
@@ -304,10 +360,26 @@ function DetailView({ review, onBack, onDelete }) {
             {score.toFixed(1)}
           </div>
           <div className="detail-score-out">/ 10</div>
-          <div className="detail-score-tag">{scoreLabel(score)}</div>
+          <div className="detail-score-tag">{isPro ? stars.label : scoreLabel(score)}</div>
         </div>
 
         <div className="detail-info">
+          {isPro && (
+            <div className="pro-banner">
+              <Sparkles size={14} />
+              <span>Reseña profesional · método ponderado</span>
+              <div className="pro-stars">
+                {[0, 1, 2, 3].map((i) => (
+                  <Star
+                    key={i}
+                    size={16}
+                    fill={i < stars.stars ? 'var(--cherry)' : 'transparent'}
+                    color={i < stars.stars ? 'var(--cherry)' : 'var(--line)'}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
           <h2 className="detail-name">{review.name}</h2>
           <div className="detail-meta">
             <span><MapPin size={14} /> {review.location}</span>
@@ -323,15 +395,22 @@ function DetailView({ review, onBack, onDelete }) {
       </div>
 
       <div className="detail-cats">
-        <h3 className="section-title">Desglose por categoría</h3>
-        {CATEGORIES.map((c) => {
+        <h3 className="section-title">
+          {isPro ? 'Desglose ponderado' : 'Desglose por categoría'}
+        </h3>
+        {cats.map((c) => {
           const v = review.ratings[c.key];
           return (
             <div key={c.key} className="cat-row">
               <div className="cat-row-head">
                 <span className="cat-row-emoji">{c.emoji}</span>
                 <div className="cat-row-text">
-                  <div className="cat-row-label">{c.label}</div>
+                  <div className="cat-row-label">
+                    {c.label}
+                    {isPro && (
+                      <span className="cat-weight">· {Math.round(c.weight * 100)}%</span>
+                    )}
+                  </div>
                   <div className="cat-row-desc">{c.desc}</div>
                 </div>
                 <div className="cat-row-val" style={{ color: scoreColor(v) }}>
@@ -356,20 +435,32 @@ function DetailView({ review, onBack, onDelete }) {
   );
 }
 
+const defaultRatings = (method) =>
+  getCategories(method).reduce((acc, c) => ({ ...acc, [c.key]: 5 }), {});
+
 function NewReviewForm({ onCancel, onSave }) {
+  const [method, setMethod] = useState('casual');
   const [form, setForm] = useState({
     name: '',
     location: '',
     date: new Date().toISOString().split('T')[0],
     notes: '',
-    ratings: { cost: 5, ambience: 5, service: 5, food: 5, speed: 5 },
+    ratings: defaultRatings('casual'),
   });
 
-  const current = avg(form.ratings);
+  const cats = getCategories(method);
+  const current = method === 'professional' ? proWeightedAvg(form.ratings) : avg(form.ratings);
+  const stars = proStarRating(current);
+
+  const switchMethod = (next) => {
+    if (next === method) return;
+    setMethod(next);
+    setForm((f) => ({ ...f, ratings: defaultRatings(next) }));
+  };
 
   const save = () => {
     if (!form.name.trim()) return;
-    onSave(form);
+    onSave({ ...form, method });
   };
 
   return (
@@ -379,12 +470,53 @@ function NewReviewForm({ onCancel, onSave }) {
         <button className="icon-btn" onClick={onCancel}><X size={20} /></button>
       </div>
 
+      <div className="method-toggle" role="tablist" aria-label="Método de reseña">
+        <button
+          role="tab"
+          aria-selected={method === 'casual'}
+          className={method === 'casual' ? 'active' : ''}
+          onClick={() => switchMethod('casual')}
+        >
+          <Heart size={14} /> Nuestro método
+        </button>
+        <button
+          role="tab"
+          aria-selected={method === 'professional'}
+          className={method === 'professional' ? 'active' : ''}
+          onClick={() => switchMethod('professional')}
+        >
+          <Sparkles size={14} /> Crítico profesional
+        </button>
+      </div>
+
+      <p className="method-hint">
+        {method === 'casual'
+          ? '5 categorías sencillas con el mismo peso — para reseñar como pareja.'
+          : 'Rúbrica ponderada al estilo Michelin / NYT. La cocina pesa más, luego servicio, ambiente, valor y consistencia.'}
+      </p>
+
       <div className="form-preview">
-        <div className="form-preview-label">Puntuación actual</div>
+        <div className="form-preview-label">
+          {method === 'professional' ? 'Puntaje ponderado' : 'Puntuación actual'}
+        </div>
         <div className="form-preview-score" style={{ color: scoreColor(current) }}>
           {current.toFixed(1)}
         </div>
-        <div className="form-preview-tag">{scoreLabel(current)}</div>
+        <div className="form-preview-tag">
+          {method === 'professional' ? stars.label : scoreLabel(current)}
+        </div>
+        {method === 'professional' && (
+          <div className="pro-stars centered" aria-label={`${stars.stars} de 4 estrellas`}>
+            {[0, 1, 2, 3].map((i) => (
+              <Star
+                key={i}
+                size={18}
+                fill={i < stars.stars ? 'var(--cherry)' : 'transparent'}
+                color={i < stars.stars ? 'var(--cherry)' : 'var(--line)'}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="form-grid">
@@ -419,19 +551,28 @@ function NewReviewForm({ onCancel, onSave }) {
         <textarea
           value={form.notes}
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          placeholder="¿Qué hizo este lugar especial? ¿Qué pidieron?"
+          placeholder={method === 'professional'
+            ? 'Platos pedidos, técnica, errores, momentos memorables…'
+            : '¿Qué hizo este lugar especial? ¿Qué pidieron?'}
           rows={3}
         />
       </div>
 
-      <h3 className="section-title" style={{ marginTop: '2rem' }}>Califiquen del 1 al 10</h3>
+      <h3 className="section-title" style={{ marginTop: '2rem' }}>
+        {method === 'professional' ? 'Califiquen del 1 al 10 (ponderado)' : 'Califiquen del 1 al 10'}
+      </h3>
 
-      {CATEGORIES.map((c) => (
+      {cats.map((c) => (
         <div key={c.key} className="slider-row">
           <div className="slider-head">
             <span className="slider-emoji">{c.emoji}</span>
             <div className="slider-text">
-              <div className="slider-label">{c.label}</div>
+              <div className="slider-label">
+                {c.label}
+                {method === 'professional' && (
+                  <span className="cat-weight">· {Math.round(c.weight * 100)}%</span>
+                )}
+              </div>
               <div className="slider-desc">{c.desc}</div>
             </div>
             <div className="slider-val" style={{ color: scoreColor(form.ratings[c.key]) }}>
@@ -461,6 +602,191 @@ function NewReviewForm({ onCancel, onSave }) {
           <Heart size={16} fill="currentColor" /> Guardar reseña
         </button>
       </div>
+    </div>
+  );
+}
+
+// =====================================================
+// Spinning wheel — solo lugares con puntaje 7+
+// =====================================================
+
+const polarToCartesian = (radius, angleDeg) => {
+  const a = (angleDeg * Math.PI) / 180;
+  return { x: radius * Math.cos(a), y: radius * Math.sin(a) };
+};
+
+function WheelView({ reviews, onBack, onSelect }) {
+  const eligible = useMemo(
+    () =>
+      reviews
+        .filter((r) => getScore(r) >= 7)
+        .sort((a, b) => getScore(b) - getScore(a)),
+    [reviews]
+  );
+
+  const [rotation, setRotation] = useState(0);
+  const [spinning, setSpinning] = useState(false);
+  const [winner, setWinner] = useState(null);
+
+  const spin = () => {
+    if (spinning || eligible.length === 0) return;
+    setWinner(null);
+    setSpinning(true);
+
+    const n = eligible.length;
+    const segAngle = 360 / n;
+    const winnerIdx = Math.floor(Math.random() * n);
+
+    // El puntero está en el tope (cartesianamente, ángulo -90).
+    // El centro del segmento i está originalmente en (i * segAngle + segAngle/2) - 90.
+    // Queremos que tras la rotación quede en -90, así que la rotación debe ser
+    // -(i*segAngle + segAngle/2), módulo 360, más vueltas completas para drama.
+    const targetMod = ((-(winnerIdx * segAngle + segAngle / 2)) % 360 + 360) % 360;
+    const currentMod = ((rotation % 360) + 360) % 360;
+    const delta = ((targetMod - currentMod) + 360) % 360;
+    const newRotation = rotation + 360 * 6 + delta;
+    setRotation(newRotation);
+
+    setTimeout(() => {
+      setWinner(eligible[winnerIdx]);
+      setSpinning(false);
+    }, 4600);
+  };
+
+  const segAngle = eligible.length ? 360 / eligible.length : 0;
+  const fontSize = Math.max(7, Math.min(13, 170 / Math.max(eligible.length, 6)));
+  const maxChars =
+    eligible.length > 18 ? 9 : eligible.length > 12 ? 13 : eligible.length > 8 ? 17 : 22;
+
+  return (
+    <div className="wheel-page">
+      <button className="back-btn" onClick={onBack}>← Volver</button>
+
+      <div className="wheel-intro">
+        <h2 className="wheel-title">¿Dónde comemos hoy?</h2>
+        <p className="wheel-sub">
+          Solo los lugares que ya nos enamoraron — puntaje 7.0 o más.
+        </p>
+        <div className="wheel-count">
+          <Dices size={14} /> {eligible.length} restaurantes en juego
+        </div>
+      </div>
+
+      {eligible.length === 0 ? (
+        <div className="empty">
+          <Heart size={40} strokeWidth={1.2} />
+          <h3>Aún no hay candidatos</h3>
+          <p>Necesitan al menos una reseña con puntaje 7 o más.</p>
+        </div>
+      ) : (
+        <>
+          <div className="wheel-stage">
+            <div className="wheel-pointer" aria-hidden="true" />
+            <svg viewBox="-200 -200 400 400" className="wheel-svg">
+              <g
+                style={{
+                  transform: `rotate(${rotation}deg)`,
+                  transformOrigin: 'center',
+                  transition: spinning
+                    ? 'transform 4.5s cubic-bezier(0.17, 0.67, 0.21, 1)'
+                    : 'none',
+                }}
+              >
+                {eligible.map((r, i) => {
+                  const start = i * segAngle - 90;
+                  const end = start + segAngle;
+                  const p1 = polarToCartesian(180, start);
+                  const p2 = polarToCartesian(180, end);
+                  const largeArc = segAngle > 180 ? 1 : 0;
+                  const d = `M 0 0 L ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A 180 180 0 ${largeArc} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} Z`;
+
+                  const mid = start + segAngle / 2;
+                  const txt = polarToCartesian(112, mid);
+                  const isFlipped = mid > 90 || mid < -90;
+                  const textRotation = isFlipped ? mid + 180 : mid;
+                  const color = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+                  const label =
+                    r.name.length > maxChars
+                      ? r.name.slice(0, maxChars - 1) + '…'
+                      : r.name;
+                  const isWinner = winner && winner.id === r.id && !spinning;
+
+                  return (
+                    <g key={r.id}>
+                      <path
+                        d={d}
+                        fill={color}
+                        stroke="#FAF5EE"
+                        strokeWidth="1.5"
+                        opacity={winner && !spinning && !isWinner ? 0.35 : 1}
+                      />
+                      <text
+                        x={txt.x}
+                        y={txt.y}
+                        transform={`rotate(${textRotation} ${txt.x} ${txt.y})`}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontSize={fontSize}
+                        fontFamily="Inter Tight, sans-serif"
+                        fontWeight="700"
+                        fill="white"
+                        style={{ pointerEvents: 'none' }}
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  );
+                })}
+                <circle r="26" fill="#FAF5EE" stroke="#C81E3A" strokeWidth="3" />
+                <text
+                  y="2"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize="26"
+                  fill="#C81E3A"
+                >
+                  ♥
+                </text>
+              </g>
+            </svg>
+          </div>
+
+          <button
+            className="btn-primary wheel-spin-btn"
+            onClick={spin}
+            disabled={spinning}
+          >
+            <RotateCw size={18} className={spinning ? 'spinning-icon' : ''} />
+            {spinning ? 'Girando…' : winner ? 'Girar de nuevo' : 'Girar la ruleta'}
+          </button>
+
+          {winner && !spinning && (
+            <div className="wheel-result">
+              <div className="wheel-result-label">Esta vez vamos a…</div>
+              <div className="wheel-result-name">{winner.name}</div>
+              <div
+                className="wheel-result-score"
+                style={{ color: scoreColor(getScore(winner)) }}
+              >
+                {getScore(winner).toFixed(1)}
+                <span> · {scoreLabel(getScore(winner))}</span>
+              </div>
+              {winner.location && (
+                <div className="wheel-result-meta">
+                  <MapPin size={12} /> {winner.location}
+                </div>
+              )}
+              <button
+                className="btn-secondary"
+                onClick={() => onSelect(winner)}
+                style={{ marginTop: '1rem' }}
+              >
+                Ver reseña completa
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -1278,6 +1604,279 @@ const styles = `
   color: var(--cherry);
 }
 
+/* ===== Hero actions, ghost button ===== */
+.hero-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--burgundy);
+  border: 1px solid var(--line);
+  padding: 0.7rem 1.1rem;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  backdrop-filter: blur(6px);
+}
+
+.btn-ghost:hover {
+  background: white;
+  border-color: var(--cherry);
+  color: var(--cherry);
+  transform: translateY(-1px);
+}
+
+/* ===== Pro mode visuals ===== */
+.card-pro-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--burgundy);
+  background: var(--rose-soft);
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  margin-top: 0.5rem;
+}
+
+.pro-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--burgundy);
+  background: var(--rose-soft);
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  margin-bottom: 0.9rem;
+}
+
+.pro-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-left: 0.4rem;
+}
+
+.pro-stars.centered {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0 0;
+}
+
+.cat-weight {
+  font-size: 0.72rem;
+  color: var(--ash);
+  font-weight: 500;
+  margin-left: 0.4rem;
+  letter-spacing: 0.02em;
+}
+
+/* ===== Method toggle inside the form ===== */
+.method-toggle {
+  display: flex;
+  background: var(--cream);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 0.5rem;
+  gap: 4px;
+}
+
+.method-toggle button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: none;
+  background: transparent;
+  padding: 0.65rem 1rem;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--ash);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 600;
+}
+
+.method-toggle button.active {
+  background: var(--cherry);
+  color: white;
+  box-shadow: 0 4px 12px -3px rgba(200, 30, 58, 0.4);
+}
+
+.method-hint {
+  font-size: 0.82rem;
+  color: var(--ash);
+  margin: 0 0 1.5rem;
+  line-height: 1.45;
+  font-style: italic;
+}
+
+/* ===== Spinning wheel ===== */
+.wheel-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: fadeIn 0.4s ease;
+}
+
+.wheel-page .back-btn {
+  align-self: flex-start;
+}
+
+.wheel-intro {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.wheel-title {
+  font-family: var(--font-display);
+  font-size: 2.4rem;
+  font-weight: 900;
+  font-style: italic;
+  color: var(--burgundy);
+  margin: 0 0 0.4rem;
+  line-height: 1.05;
+}
+
+.wheel-sub {
+  color: var(--ash);
+  font-size: 0.95rem;
+  margin: 0 0 0.85rem;
+}
+
+.wheel-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--burgundy);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--rose-soft);
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+}
+
+.wheel-stage {
+  position: relative;
+  width: min(420px, 90vw);
+  height: min(420px, 90vw);
+  margin-bottom: 2rem;
+  filter: drop-shadow(0 25px 40px -15px rgba(92, 10, 31, 0.35));
+}
+
+.wheel-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.wheel-pointer {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 14px solid transparent;
+  border-right: 14px solid transparent;
+  border-top: 24px solid var(--ink);
+  z-index: 3;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
+}
+
+.wheel-spin-btn {
+  font-size: 1rem;
+  padding: 0.9rem 1.8rem;
+}
+
+.wheel-spin-btn:disabled {
+  cursor: progress;
+}
+
+.spinning-icon {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.wheel-result {
+  margin-top: 2rem;
+  text-align: center;
+  padding: 1.75rem 2rem;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: 0 20px 40px -20px rgba(92, 10, 31, 0.25);
+  animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  max-width: 360px;
+}
+
+.wheel-result-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ash);
+  font-weight: 600;
+}
+
+.wheel-result-name {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 900;
+  font-style: italic;
+  color: var(--burgundy);
+  margin: 0.5rem 0 0.4rem;
+  line-height: 1.1;
+}
+
+.wheel-result-score {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-style: italic;
+}
+
+.wheel-result-score span {
+  font-size: 0.82rem;
+  color: var(--ash);
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+.wheel-result-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--ash);
+  margin-top: 0.5rem;
+}
+
 @media (max-width: 640px) {
   .hero { padding: 1.5rem 1.25rem 0; }
   .main { padding: 0 1.25rem 2rem; }
@@ -1292,5 +1891,7 @@ const styles = `
   .card-score-num { font-size: 2.2rem; }
   .stats-row { padding: 1rem; }
   .stat-num { font-size: 1.4rem; }
+  .wheel-title { font-size: 1.8rem; }
+  .method-toggle button { font-size: 0.78rem; padding: 0.55rem 0.6rem; }
 }
 `;
